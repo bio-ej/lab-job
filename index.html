@@ -323,7 +323,7 @@
 "use strict";
 const RULE_E3 = "2주에 한 번 반드시 교체. 반쯤 남으면 남은 물을 스퀴즈 보틀에 모두 옮기고, 새로 만들어 채워둔다.";
 const DEFAULT_CONFIG = {
-  v:1,
+  v:2,
   members:["HHJ","LYR","JHW","LEJ"],
   jobs:[
     {name:"공용 1X E3 Egg water (실험실)", emoji:"💧", people:1, rule:RULE_E3},
@@ -374,7 +374,12 @@ function loadConfig(){
   }catch(e){}
   try{
     const ls=localStorage.getItem("labjob_config");
-    if(ls){const c=JSON.parse(ls); if(c&&c.members) return normalize(c);}
+    if(ls){
+      const c=JSON.parse(ls);
+      // 저장된 설정이 최신 기본값보다 구버전이면 폐기하고 새 기본값 사용 (업데이트 자동 반영)
+      if(c&&c.members&&(c.v||0)>=(DEFAULT_CONFIG.v||0)) return normalize(c);
+      localStorage.removeItem("labjob_config");
+    }
   }catch(e){}
   return normalize(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
 }
