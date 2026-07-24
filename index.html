@@ -292,8 +292,9 @@
         <button class="addbtn" id="addJob">+ 잡무 추가</button>
       </div>
       <div class="set-grp">
-        <span class="glabel">고정 업무 (멤버별 상시 담당)</span>
+        <span class="glabel">고정 업무 (상시 담당 · 로테이션과 무관)</span>
         <div id="setFixed" style="display:flex;flex-direction:column;gap:7px"></div>
+        <button class="addbtn" id="addFixed">+ 고정 업무 추가 (로테이션 안 도는 인원 포함)</button>
       </div>
       <div class="set-grp">
         <span class="glabel">주기 설정</span>
@@ -335,7 +336,8 @@ const DEFAULT_CONFIG = {
     {member:"HHJ", duty:"공용 60X E3 Egg water · 피딩 스케줄 관리"},
     {member:"LYR", duty:"Tricaine"},
     {member:"JHW", duty:"젬마 · 알테미어 재고 확인 및 주문"},
-    {member:"LEJ", duty:"실험실 전반적인 재고 파악 · 랩잡 배정"}
+    {member:"LEJ", duty:"실험실 전반적인 재고 파악 · 랩잡 배정"},
+    {member:"JGL", duty:"주 1회 필터 교체"}
   ],
   start:"2026-07-27",
   period:14
@@ -345,7 +347,7 @@ const DEFAULT_CONFIG = {
 let config = loadConfig();
 let viewOffset = 0;
 let me = localStorage.getItem("labjob_me");
-if(me && !config.members.includes(me)) me = null;
+if(me && !allPeople().includes(me)) me = null;
 
 /* ---------- utils ---------- */
 const $ = s => document.querySelector(s);
@@ -358,9 +360,11 @@ function todayMid(){const n=new Date();return new Date(n.getFullYear(),n.getMont
 function addDays(d,n){return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);}
 function daysBetween(a,b){return Math.round((a-b)/86400000);}
 function fmtMD(d){return (d.getMonth()+1)+"/"+d.getDate();}
-function avIdx(name){const i=config.members.indexOf(name);return ((i<0?0:i)%6);}
+function avIdx(name){const i=config.members.indexOf(name);if(i>=0)return i%6;let h=0;const s=String(name);for(let k=0;k<s.length;k++)h=(h*31+s.charCodeAt(k))>>>0;return h%6;}
 function initial(name){return String(name||"?").trim().charAt(0)||"?";}
 function avatar(name){return `<span class="av av${avIdx(name)}">${esc(initial(name))}</span>`;}
+function fixedOnly(){return config.fixed.map(f=>f.member).filter(m=>m&&!config.members.includes(m));}
+function allPeople(){return config.members.concat(fixedOnly());}
 
 function loadConfig(){
   try{
@@ -417,7 +421,7 @@ function render(){ renderNames(); renderBoard(); renderFixed(); renderTimeline()
 
 function renderNames(){
   const row=$("#nameRow"); row.innerHTML="";
-  config.members.forEach(m=>{
+  allPeople().forEach(m=>{
     const b=el("button","namechip",`${avatar(m)}<span>${esc(m)}</span>`);
     b.setAttribute("aria-pressed", me===m ? "true":"false");
     b.onclick=()=>{ me = (me===m)?null:m; if(me)localStorage.setItem("labjob_me",me); else localStorage.removeItem("labjob_me"); render(); };
@@ -622,20 +626,25 @@ function renderSettings(){
   jBox.querySelectorAll("[data-jp]").forEach(sel=>sel.onchange=e=>{config.jobs[+e.target.dataset.jp].people=+e.target.value;apply(false);});
   jBox.querySelectorAll("[data-jdel]").forEach(b=>b.onclick=()=>{config.jobs.splice(+b.dataset.jdel,1);apply(true);});
 
-  // fixed
+  // fixed duties — independent list (may include people who don't rotate)
   const fBox=$("#setFixed"); fBox.innerHTML="";
-  config.members.forEach(m=>{
-    let f=config.fixed.find(x=>x.member===m);
-    if(!f){f={member:m,duty:""};config.fixed.push(f);}
+  config.fixed.forEach((f,i)=>{
+    const rot=config.members.includes(f.member);
     const r=el("div","row");
-    r.innerHTML=`${avatar(m)}<span class="fx-name" style="font-size:12.5px">${esc(m)}</span>
-      <input class="inp small" value="${esc(f.duty)}" data-fx="${esc(m)}" placeholder="고정 업무 (선택)" style="flex:1">`;
+    r.innerHTML=`${avatar(f.member)}
+      <input class="inp small" value="${esc(f.member)}" data-fxn="${i}" placeholder="이름" title="${rot?"로테이션 참여 인원":"고정 전용(로테이션 미참여)"}" style="flex:0 0 68px">
+      <input class="inp small" value="${esc(f.duty)}" data-fxd="${i}" placeholder="고정 업무" style="flex:1">
+      <button class="iconbtn del" data-fxdel="${i}" title="삭제">✕</button>`;
     fBox.appendChild(r);
   });
-  fBox.querySelectorAll("[data-fx]").forEach(inp=>inp.oninput=e=>{
-    const nm=e.target.dataset.fx; const f=config.fixed.find(x=>x.member===nm);
-    if(f)f.duty=e.target.value; apply(false);
+  fBox.querySelectorAll("[data-fxn]").forEach(inp=>inp.oninput=e=>{
+    const i=+e.target.dataset.fxn, old=config.fixed[i].member, val=e.target.value;
+    config.fixed[i].member=val; if(me===old)me=val; apply(false);
   });
+  fBox.querySelectorAll("[data-fxd]").forEach(inp=>inp.oninput=e=>{
+    config.fixed[+e.target.dataset.fxd].duty=e.target.value; apply(false);
+  });
+  fBox.querySelectorAll("[data-fxdel]").forEach(b=>b.onclick=()=>{ config.fixed.splice(+b.dataset.fxdel,1); apply(true); });
 
   $("#setStart").value=config.start;
   $("#setPeriod").value=config.period;
@@ -650,6 +659,7 @@ function apply(rebuildSettings){
 
 $("#addMember").onclick=()=>{ config.members.push("새 멤버"); apply(true); };
 $("#addJob").onclick=()=>{ config.jobs.push({name:"새 잡무",emoji:"•",people:1,rule:""}); apply(true); };
+$("#addFixed").onclick=()=>{ config.fixed.push({member:"새 인원",duty:""}); apply(true); };
 $("#setStart").onchange=e=>{ if(e.target.value){config.start=e.target.value; viewOffset=0; apply(false);} };
 $("#setPeriod").oninput=e=>{ const v=Math.max(1,+e.target.value||14); config.period=v; viewOffset=0; render(); saveLocal(); };
 $("#resetBtn").onclick=()=>{
